@@ -1,0 +1,124 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: smart-parking-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  auth-service:
+    build:
+      context: ./backend/auth-service
+    container_name: smart-parking-auth-service
+    restart: unless-stopped
+    environment:
+      PORT: 5001
+      MONGO_URI: mongodb://mongo:27017/smart_parking
+      DB_NAME: smart_parking
+      JWT_SECRET: smartparkingsecret
+      SERVICE_TOKEN: internal-service-token
+    depends_on:
+      - mongo
+
+  parking-service:
+    build:
+      context: ./backend/parking-service
+    container_name: smart-parking-parking-service
+    restart: unless-stopped
+    environment:
+      PORT: 5002
+      MONGO_URI: mongodb://mongo:27017/smart_parking
+      DB_NAME: smart_parking
+      JWT_SECRET: smartparkingsecret
+      SERVICE_TOKEN: internal-service-token
+    depends_on:
+      - mongo
+
+  booking-service:
+    build:
+      context: ./backend/booking-service
+    container_name: smart-parking-booking-service
+    restart: unless-stopped
+    environment:
+      PORT: 5003
+      MONGO_URI: mongodb://mongo:27017/smart_parking
+      DB_NAME: smart_parking
+      JWT_SECRET: smartparkingsecret
+      SERVICE_TOKEN: internal-service-token
+      PARKING_SERVICE_URL: http://parking-service:5002
+      NOTIFICATION_SERVICE_URL: http://notification-service:5005
+      BOOKING_EXPIRY_MINUTES: 10
+    depends_on:
+      - mongo
+      - parking-service
+      - notification-service
+
+  payment-service:
+    build:
+      context: ./backend/payment-service
+    container_name: smart-parking-payment-service
+    restart: unless-stopped
+    environment:
+      PORT: 5004
+      MONGO_URI: mongodb://mongo:27017/smart_parking
+      DB_NAME: smart_parking
+      JWT_SECRET: smartparkingsecret
+      SERVICE_TOKEN: internal-service-token
+      BOOKING_SERVICE_URL: http://booking-service:5003
+      NOTIFICATION_SERVICE_URL: http://notification-service:5005
+    depends_on:
+      - mongo
+      - booking-service
+      - notification-service
+
+  notification-service:
+    build:
+      context: ./backend/notification-service
+    container_name: smart-parking-notification-service
+    restart: unless-stopped
+    environment:
+      PORT: 5005
+      MONGO_URI: mongodb://mongo:27017/smart_parking
+      DB_NAME: smart_parking
+      JWT_SECRET: smartparkingsecret
+      SERVICE_TOKEN: internal-service-token
+    depends_on:
+      - mongo
+
+  gateway:
+    build:
+      context: ./backend/gateway
+    container_name: smart-parking-gateway
+    restart: unless-stopped
+    environment:
+      PORT: 5000
+      AUTH_SERVICE_URL: http://auth-service:5001
+      PARKING_SERVICE_URL: http://parking-service:5002
+      BOOKING_SERVICE_URL: http://booking-service:5003
+      PAYMENT_SERVICE_URL: http://payment-service:5004
+      NOTIFICATION_SERVICE_URL: http://notification-service:5005
+    depends_on:
+      - auth-service
+      - parking-service
+      - booking-service
+      - payment-service
+      - notification-service
+    ports:
+      - "5000:5000"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: smart-parking-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://localhost:5000/api
+    depends_on:
+      - gateway
+    ports:
+      - "5173:5173"
+
+volumes:
+  mongo-data:
